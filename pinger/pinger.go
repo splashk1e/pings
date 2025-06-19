@@ -3,7 +3,6 @@ package pinger
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
 )
@@ -16,7 +15,8 @@ type PingManager struct {
 }
 
 const (
-	pingCount = 5
+	pingCount        = 5
+	concurrencyLimit = 300
 )
 
 func NewPingManager(ips []string) (*PingManager, error) {
@@ -26,7 +26,8 @@ func NewPingManager(ips []string) (*PingManager, error) {
 			continue
 		}
 		pinger, err := probing.NewPinger(ip)
-		pinger.Interval = 2 * time.Second
+		//pinger.SetPrivileged(true)
+		//pinger.Interval = 2 * time.Second
 		pingers[ip] = pinger
 		if err != nil {
 			return nil, err
@@ -42,13 +43,15 @@ func NewPingManager(ips []string) (*PingManager, error) {
 
 func (m *PingManager) Start() (map[string]bool, map[string]string) {
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, concurrencyLimit)
 	for ip, pinger := range m.pingers {
 		wg.Add(1)
-
+		sem <- struct{}{}
 		go func(ip string, pinger *probing.Pinger) {
 			defer wg.Done()
+			defer func() { <-sem }()
 			pinger.OnSend = (func(pkt *probing.Packet) {
-				//fmt.Println("ping ", ip)
+				fmt.Println("ping ", ip)
 				if pkt.Seq == pingCount {
 					pinger.Stop()
 				}
@@ -58,7 +61,7 @@ func (m *PingManager) Start() (map[string]bool, map[string]string) {
 				defer m.mu.Unlock()
 				if stat.PacketsSent-stat.PacketsRecv > 2 {
 					m.results[ip] = false
-					m.comments[ip] = "Пакеты потеряны"
+					m.comments[ip] = fmt.Sprintf("Пакеты потеряны, дошло %d", stat.PacketsRecv)
 					return
 				} else {
 					m.results[ip] = true
