@@ -51,7 +51,7 @@ func (m *PingManager) Start() (map[string]bool, map[string]string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			pinger.OnSend = (func(pkt *probing.Packet) {
-				fmt.Println("ping ", ip)
+				//fmt.Println("ping ", ip)
 				if pkt.Seq == pingCount {
 					pinger.Stop()
 				}
